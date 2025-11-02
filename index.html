@@ -72,6 +72,17 @@
             setupAutocomplete(excelData);
             filterData(); // Call filterData to show initial filtered results
         }
+
+        // Request full screen on page load
+        if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen();
+        } else if (document.documentElement.mozRequestFullScreen) { // Firefox
+            document.documentElement.mozRequestFullScreen();
+        } else if (document.documentElement.webkitRequestFullscreen) { // Chrome, Safari, and Opera
+            document.documentElement.webkitRequestFullscreen();
+        } else if (document.documentElement.msRequestFullscreen) { // IE/Edge
+            document.documentElement.msRequestFullscreen();
+        }
     };
 
     document.getElementById('fileInput').addEventListener('change', handleFileSelect);
@@ -210,4 +221,3 @@
 
 </body>
 </html>
-
