@@ -31,6 +31,7 @@
             margin: 5px 0;
             box-sizing: border-box;
         }
+        #lastUpload { margin: 20px; font-size: 16px; }
         @media (min-width: 600px) {
             .card {
                 width: 45%; /* Two cards per row on medium screens */
@@ -56,6 +57,7 @@
     </select>
 </div>
 <div id="excelData"></div>
+<div id="lastUpload"></div> <!-- Container for last upload date -->
 
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js"></script>
@@ -65,12 +67,19 @@
 
     window.onload = function() {
         const storedData = localStorage.getItem('excelData');
+        const lastUpload = localStorage.getItem('lastUpload');
+        
         if (storedData) {
             excelData = JSON.parse(storedData);
             displayData(excelData);
             populateDepartmentSelect(excelData);
             setupAutocomplete(excelData);
             filterData(); // Call filterData to show initial filtered results
+        }
+
+        // Display last upload date if exists
+        if (lastUpload) {
+            document.getElementById('lastUpload').innerText = `Last upload date: ${lastUpload}`;
         }
     };
 
@@ -105,10 +114,18 @@
             excelData = rows; // Store the processed data
             localStorage.setItem('excelData', JSON.stringify(excelData));
 
+            // Store the current date and time
+            const now = new Date();
+            const dateTimeString = now.toLocaleString();
+            localStorage.setItem('lastUpload', dateTimeString);
+
             displayData(excelData);
             setupAutocomplete(excelData);
             populateDepartmentSelect(excelData);
             filterData(); // Call filterData to show initial filtered results
+            
+            // Update the last upload date displayed
+            document.getElementById('lastUpload').innerText = `Last upload date: ${dateTimeString}`;
         };
 
         reader.readAsArrayBuffer(file);
