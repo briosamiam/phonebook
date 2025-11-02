@@ -3,172 +3,209 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Phonebook Excel Viewer</title>
+    <title>My Phonebook</title>
+    <link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        h1 {
-            text-align: center;
-        }
-        input[type="file"],
-        input[type="text"] {
-            margin-bottom: 20px;
-            padding: 10px;
-            width: 100%;
-            box-sizing: border-box;
-        }
-        .table-container {
-            overflow-x: auto;
-            display: none; /* Hide the table by default */
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-        }
-        th, td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
-            white-space: nowrap;
-        }
-        th {
-            background-color: #f2f2f2;
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+        header { background-color: #4CAF50; color: white; padding: 10px; text-align: center; }
+        #excelData { margin: 20px; overflow-x: auto; } /* Allow horizontal scrolling */
+        .card-container {
+            display: flex;
+            flex-wrap: wrap; /* Allow cards to wrap on small screens */
+            justify-content: space-around; /* Space out cards */
         }
         .card {
+            background-color: #fff;
             border: 1px solid #ddd;
-            border-radius: 5px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            margin: 10px;
+            padding: 15px;
+            width: calc(100% - 20px); /* Full width minus margin */
+            max-width: 300px; /* Maximum width for cards */
+            box-sizing: border-box; /* Include padding and border in width */
+        }
+        input[type="text"], select {
+            width: 100%;
             padding: 10px;
-            margin: 10px 0;
-            display: flex;
-            flex-direction: column;
+            margin: 5px 0;
+            box-sizing: border-box;
         }
-        .card-header {
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-        @media (max-width: 600px) {
-            th, td {
-                font-size: 14px;
-                padding: 6px;
-            }
-            .table-container {
-                display: none; /* Hide table on mobile */
-            }
+        @media (min-width: 600px) {
             .card {
-                margin: 10px 0;
+                width: 45%; /* Two cards per row on medium screens */
+            }
+        }
+        @media (min-width: 900px) {
+            .card {
+                width: 30%; /* Three cards per row on large screens */
             }
         }
     </style>
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.16.9/xlsx.full.min.js"></script>
 </head>
 <body>
 
-<h1>Phonebook Excel Viewer</h1>
-<input type="file" id="fileInput" accept=".xlsx, .xls" />
-<input type="text" id="search" placeholder="Search..." />
-
-<div class="table-container">
-    <table id="dataGrid">
-        <thead>
-            <tr id="headerRow"></tr>
-        </thead>
-        <tbody id="dataBody"></tbody>
-    </table>
+<header>
+    <h1>My Phonebook</h1>
+</header>
+<div style="margin: 20px;">
+    <input type="file" id="fileInput" accept=".xlsx, .xls" />
+    <input type="text" id="searchInput" placeholder="Search..." />
+    <select id="departmentSelect">
+        <option value="">Select Department</option>
+    </select>
 </div>
+<div id="excelData"></div>
 
-<div id="cardContainer"></div>
-
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
 <script>
-    $(document).ready(function() {
-        // Load data from local storage on page load
+    let excelData = [];
+
+    window.onload = function() {
         const storedData = localStorage.getItem('excelData');
         if (storedData) {
-            renderTable(JSON.parse(storedData));
+            excelData = JSON.parse(storedData);
+            displayData(excelData);
+            populateDepartmentSelect(excelData);
+            setupAutocomplete(excelData);
+            filterData(); // Call filterData to show initial filtered results
         }
+    };
 
-        $('#fileInput').on('change', function(event) {
-            const file = event.target.files[0];
-            if (!file) return;
+    document.getElementById('fileInput').addEventListener('change', handleFileSelect);
+    document.getElementById('departmentSelect').addEventListener('change', filterData);
+    document.getElementById('searchInput').addEventListener('input', filterData);
 
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const binaryStr = e.target.result;
-                const workbook = XLSX.read(binaryStr, { type: 'binary' });
-                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                const data = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+    function handleFileSelect(event) {
+        const file = event.target.files[0];
+        const reader = new FileReader();
 
-                // Save data to local storage
-                localStorage.setItem('excelData', JSON.stringify(data));
+        reader.onload = function(e) {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
 
-                renderTable(data);
-            };
-            reader.readAsBinaryString(file);
+            // Load the sheet data, skipping the header row
+            const rows = XLSX.utils.sheet_to_json(firstSheet, { 
+                header: 1,
+                defval: "---" 
+            }).slice(1); // Skip the first row
+
+            // Replace any remaining blank fields with "---"
+            for (let i = 0; i < rows.length; i++) {
+                for (let j = 0; j < rows[i].length; j++) {
+                    if (rows[i][j] === "") {
+                        rows[i][j] = "---"; // Ensure all blanks are set to "---"
+                    }
+                }
+            }
+
+            excelData = rows; // Store the processed data
+            localStorage.setItem('excelData', JSON.stringify(excelData));
+
+            displayData(excelData);
+            setupAutocomplete(excelData);
+            populateDepartmentSelect(excelData);
+            filterData(); // Call filterData to show initial filtered results
+        };
+
+        reader.readAsArrayBuffer(file);
+    }
+
+    function displayData(data) {
+        const container = document.getElementById('excelData');
+        container.innerHTML = ''; // Clear previous data
+
+        // Create a wrapper div for the cards
+        const cardContainer = document.createElement('div');
+        cardContainer.className = 'card-container';
+
+        // Display data rows in a card format
+        data.forEach(row => {
+            const card = document.createElement('div');
+            card.className = 'card';
+
+            // Create card content
+            const rowToDisplay = [
+                { label: "Chinese Name", value: row[0] },
+                { label: "English Name", value: row[1] },
+                { label: "Alias", value: row[2] },
+                { label: "Post", value: row[3] },
+                { label: "Department", value: row[4] },
+                { label: "Phone Number", value: row[5] },
+                { label: "Email", value: row[6] }
+            ];
+
+            rowToDisplay.forEach(item => {
+                const p = document.createElement('p');
+                p.innerHTML = `<strong>${item.label}:</strong> ${item.value}`;
+                card.appendChild(p);
+            });
+
+            cardContainer.appendChild(card);
         });
 
-        function renderTable(data) {
-            $('#headerRow').empty();
-            $('#dataBody').empty();
-            $('#cardContainer').empty();  // Clear previous cards
+        container.appendChild(cardContainer);
+    }
 
-            if (data.length === 0) return;
+    function setupAutocomplete(data) {
+        const uniqueValues = new Set();
 
-            // Render header for the table
-            data[0].forEach(header => {
-                $('#headerRow').append(`<th>${header}</th>`);
-            });
+        data.forEach(row => {
+            const [chineseName, englishName, alias] = row;
+            if (chineseName) uniqueValues.add(chineseName);
+            if (englishName) uniqueValues.add(englishName);
+            if (alias) uniqueValues.add(alias);
+        });
 
-            // Render body for the table and cards
-            data.slice(1).forEach(row => {
-                const rowHtml = $('<tr></tr>');
-                const cardHtml = $('<div class="card"></div>');
-
-                row.forEach((cell, index) => {
-                    rowHtml.append(`<td>${cell}</td>`);
-                    cardHtml.append(`<div class="card-header">${data[0][index]}:</div><div>${cell}</div>`);
-                });
-                $('#dataBody').append(rowHtml);
-                $('#cardContainer').append(cardHtml);
-            });
-
-            // Show table or cards based on screen size
-            adjustDisplay();
-
-            // Attach search functionality
-            attachSearch(data);
-        }
-
-        function adjustDisplay() {
-            if ($(window).width() <= 600) {
-                $('.table-container').hide();
-                $('#cardContainer').show();
-            } else {
-                $('.table-container').show();
-                $('#cardContainer').hide();
+        $('#searchInput').autocomplete({
+            source: Array.from(uniqueValues).slice(0, 15), // Limit suggestions to 15
+            minLength: 1,
+            select: function(event, ui) {
+                const searchTerm = ui.item.value.toLowerCase();
+                filterData(); // Refresh data display based on search term
             }
-        }
+        });
+    }
 
-        function attachSearch(data) {
-            $('#search').on('input', function() {
-                const filter = $(this).val().toLowerCase();
-                $('#dataBody tr').filter(function() {
-                    $(this).toggle($(this).text().toLowerCase().indexOf(filter) > -1);
-                });
+    function populateDepartmentSelect(data) {
+        const departmentSelect = document.getElementById('departmentSelect');
+        const departments = new Set();
 
-                $('#cardContainer .card').filter(function() {
-                    const cardText = $(this).text().toLowerCase();
-                    $(this).toggle(cardText.indexOf(filter) > -1);
-                });
-            });
-        }
+        data.forEach(row => {
+            const department = row[4]; // Assuming department is the 5th column (index 4)
+            if (department) departments.add(department);
+        });
 
-        $(window).resize(adjustDisplay); // Adjust on resize
-    });
+        // Clear existing options
+        departmentSelect.innerHTML = '<option value="">Select Department</option>';
+
+        // Convert Set to Array, sort it, and populate dropdown
+        const sortedDepartments = Array.from(departments).sort();
+
+        sortedDepartments.forEach(department => {
+            const option = document.createElement('option');
+            option.value = department;
+            option.textContent = department;
+            departmentSelect.appendChild(option);
+        });
+    }
+
+    function filterData() {
+        const selectedDepartment = document.getElementById('departmentSelect').value;
+        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+
+        // Filter data based on department and search input
+        const filteredData = excelData.filter(row => {
+            const matchesDepartment = !selectedDepartment || row[4] === selectedDepartment; // Department match
+            const matchesSearch = row.some(cell => cell.toString().toLowerCase().includes(searchTerm)); // Search match
+            return matchesDepartment && matchesSearch; // Both conditions must be true
+        });
+
+        displayData(filteredData); // Display filtered data
+    }
 </script>
 
 </body>
