@@ -86,6 +86,12 @@
 
 <script>
     $(document).ready(function() {
+        // Load data from local storage on page load
+        const storedData = localStorage.getItem('excelData');
+        if (storedData) {
+            renderTable(JSON.parse(storedData));
+        }
+
         $('#fileInput').on('change', function(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -96,6 +102,9 @@
                 const workbook = XLSX.read(binaryStr, { type: 'binary' });
                 const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
                 const data = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+
+                // Save data to local storage
+                localStorage.setItem('excelData', JSON.stringify(data));
 
                 renderTable(data);
             };
