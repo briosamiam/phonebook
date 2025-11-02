@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phonebook Excel Viewer</title>
+    <link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+    <style>
+        body { font-family: Arial, sans-serif; }
+        #excelData { margin-top: 20px; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        tr:hover {
+            background-color: #f1f1f1;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Phonebook Excel Viewer</h1>
+<input type="file" id="fileInput" accept=".xlsx, .xls" />
+<input type="text" id="searchInput" placeholder="Search..." />
+<select id="departmentSelect">
+    <option value="">Select Department</option>
+</select>
+<div id="excelData"></div>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+<script>
+    let excelData = [];
+
+    window.onload = function() {
+        const storedData = localStorage.getItem('excelData');
+        if (storedData) {
+            excelData = JSON.parse(storedData);
+            displayData(excelData);
+            populateDepartmentSelect(excelData);
+            setupAutocomplete(excelData);
+            filterData(); // Call filterData to show initial filtered results
+        }
+    };
+
+    document.getElementById('fileInput').addEventListener('change', handleFileSelect);
+    document.getElementById('departmentSelect').addEventListener('change', filterData);
+    document.getElementById('searchInput').addEventListener('input', filterData);
+
+    function handleFileSelect(event) {
+        const file = event.target.files[0];
+        const reader = new FileReader();
+
+        reader.onload = function(e) {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+
+            // Pre-process the sheet data to replace blank alias cells with "--"
+            const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 , defval: '---'}).slice(1);
+            // Replace any remaining blank fields with "---"
+            for (let i = 0; i < rows.length; i++) {
+                for (let j = 0; j < rows[i].length; j++) {
+                    if (rows[i][j] === "") {
+                        rows[i][j] = "---"; // Ensure all blanks are set to "---"
+                    }
+                }
+            }
+
+            excelData = rows; // Store the processed data
+            localStorage.setItem('excelData', JSON.stringify(excelData));
+
+            displayData(excelData);
+            setupAutocomplete(excelData);
+            populateDepartmentSelect(excelData);
+            filterData(); // Call filterData to show initial filtered results
+        };
+
+        reader.readAsArrayBuffer(file);
+    }
+
+    function displayData(data) {
+        const container = document.getElementById('excelData');
+        container.innerHTML = ''; // Clear previous data
+        
+        const table = document.createElement('table');
+        const headerRow = document.createElement('tr');
+
+        // Create table headers
+ //       const headers = ["Chinese Name", "English Name", "Alias", "Post", "Department", "Phone Number", "Address", "Email"];
+        // Create table headers (removed Address from headers)
+        const headers = ["Chinese Name", "English Name", "Alias", "Post", "Department", "Phone Number", "Email"];
+         headers.forEach(header => {
+            const th = document.createElement('th');
+            th.textContent = header;
+            headerRow.appendChild(th);
+        });
+        table.appendChild(headerRow);
+
+        // Display data rows
+        data.slice(1).forEach(row => { // Skip header row
+            const rowDiv = document.createElement('tr');
+			// Adjusted to skip Address field (index 6)
+            const rowToDisplay = [row[0], row[1], row[2], row[3], row[4], row[5], row[7]]; // Exclude Address
+            rowToDisplay.forEach(cell => {
+//             row.forEach(cell => {
+                const td = document.createElement('td');
+                td.textContent = cell === null ? "--" : cell; // Ensure "--" for any remaining blank cells
+//				console.log(td.textContent)
+                rowDiv.appendChild(td);
+            });
+            table.appendChild(rowDiv);
+        });
+
+        container.appendChild(table);
+    }
+
+    function setupAutocomplete(data) {
+        const uniqueValues = new Set();
+
+        data.slice(1).forEach(row => { // Skip header row
+            const [chineseName, englishName, alias] = row;
+            if (chineseName) uniqueValues.add(chineseName);
+            if (englishName) uniqueValues.add(englishName);
+            if (alias) uniqueValues.add(alias);
+        });
+
+        $('#searchInput').autocomplete({
+            source: Array.from(uniqueValues).slice(0, 15), // Limit suggestions to 15
+            minLength: 1,
+            select: function(event, ui) {
+                const searchTerm = ui.item.value.toLowerCase();
+                filterData(); // Refresh data display based on search term
+            }
+        });
+    }
+
+    function populateDepartmentSelect(data) {
+        const departmentSelect = document.getElementById('departmentSelect');
+        const departments = new Set();
+
+        data.slice(1).forEach(row => { // Skip header row
+            const department = row[4]; // Assuming department is the 5th column (index 4)
+            if (department) departments.add(department);
+        });
+
+        // Clear existing options
+        departmentSelect.innerHTML = '<option value="">Select Department</option>';
+
+        // Convert Set to Array, sort it, and populate dropdown
+        const sortedDepartments = Array.from(departments).sort();
+
+        sortedDepartments.forEach(department => {
+            const option = document.createElement('option');
+            option.value = department;
+            option.textContent = department;
+            departmentSelect.appendChild(option);
+        });
+    }
+
+    function filterData() {
+        const selectedDepartment = document.getElementById('departmentSelect').value;
+        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+
+        // Filter data based on department and search input
+        const filteredData = excelData.filter(row => {
+			console.log(row[4])
+            const matchesDepartment = !selectedDepartment || row[4] === selectedDepartment; // Department match
+            const matchesSearch = row.some(cell => cell.toString().toLowerCase().includes(searchTerm)); // Search match
+            return matchesDepartment && matchesSearch; // Both conditions must be true
+        });
+
+        displayData([excelData[0], ...filteredData]); // Include header row
+    }
+</script>
+
+</body>
+</html>
